@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from ai_video_editor.server import create_app
+from ai_video_editor.server.__main__ import main as run_server
 from ai_video_editor.server.jobs import REGISTRY
 from ai_video_editor.server.routes import _cost, find_rough_cut
 
@@ -43,3 +44,22 @@ def test_job_websocket_serializes_path_results(tmp_path):
 
     assert payload["status"] == "completed"
     assert payload["result"]["rough_cut"] == "exports/cuts/cut_001/rough_cut.mp4"
+
+
+def test_server_entrypoint_loads_repo_dotenv_before_reading_settings(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("VX_HOST=127.0.0.2\nVX_PORT=18766\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("VX_HOST", raising=False)
+    monkeypatch.delenv("VX_PORT", raising=False)
+
+    captured = {}
+
+    def fake_run(app, **kwargs):
+        captured.update(app=app, **kwargs)
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+
+    run_server()
+
+    assert captured["host"] == "127.0.0.2"
+    assert captured["port"] == 18766
