@@ -151,11 +151,26 @@ class SegmentProbe:
     pix_fmt: str = ""
     fps: float = 0.0
     duration: float = 0.0
+    video_duration: float = 0.0
+    audio_duration: float = 0.0
     audio_sample_rate: int = 0
     audio_channels: int = 0
     has_video: bool = False
     has_audio: bool = False
     file_size: int = 0
+
+
+@dataclass(frozen=True)
+class CompatibilityTarget:
+    """Canonical stream parameters used to normalize segments before concat."""
+
+    video_codec: str
+    width: int
+    height: int
+    pix_fmt: str
+    fps: float
+    audio_sample_rate: int
+    audio_channels: int
 
 
 def _probe_segment(path: Path) -> SegmentProbe:
@@ -206,12 +221,14 @@ def _probe_segment(path: Path) -> SegmentProbe:
                 probe.fps = round(float(num) / float(den), 3) if float(den) else 0.0
             except (ValueError, ZeroDivisionError):
                 probe.fps = 0.0
+            probe.video_duration = float(stream.get("duration", 0) or 0)
 
         elif stream.get("codec_type") == "audio" and not probe.has_audio:
             probe.has_audio = True
             probe.audio_codec = stream.get("codec_name", "")
             probe.audio_sample_rate = int(stream.get("sample_rate", 0))
             probe.audio_channels = int(stream.get("channels", 0))
+            probe.audio_duration = float(stream.get("duration", 0) or 0)
 
     return probe
 
@@ -260,18 +277,15 @@ def _validate_segment(
 
 def _check_segment_compatibility(
     probes: list[SegmentProbe],
-) -> tuple[list[str], list[int]]:
+) -> tuple[list[str], list[int], CompatibilityTarget | None]:
     """Layer 2: Cross-segment compatibility matrix check.
 
     Compares all segments against each other to find parameter mismatches that
     would cause concat -c:v copy to produce a corrupt container.
 
-    Returns (warnings, indices_of_incompatible_segments).
+    Returns (warnings, indices_of_incompatible_segments, canonical_target).
     Incompatible segments need re-encoding before concat.
     """
-    if len(probes) < 2:
-        return [], []
-
     warnings = []
     incompatible_indices = []
 
@@ -287,7 +301,7 @@ def _check_segment_compatibility(
 
     video_probes = [p for p in probes if p.has_video]
     if not video_probes:
-        return ["No segments have a video stream"], []
+        return ["No segments have a video stream"], [], None
 
     ref_codec = _majority([p.video_codec for p in video_probes])
     ref_res = _majority([(p.width, p.height) for p in video_probes])
@@ -295,6 +309,18 @@ def _check_segment_compatibility(
     ref_fps = _majority([round(p.fps, 1) for p in video_probes])
     ref_asr = _majority([p.audio_sample_rate for p in video_probes if p.has_audio])
     ref_ach = _majority([p.audio_channels for p in video_probes if p.has_audio])
+    target = CompatibilityTarget(
+        video_codec=str(ref_codec or ""),
+        width=int(ref_res[0]),
+        height=int(ref_res[1]),
+        pix_fmt=str(ref_pix or ""),
+        fps=float(ref_fps or 0),
+        audio_sample_rate=int(ref_asr or 0),
+        audio_channels=int(ref_ach or 0),
+    )
+
+    if len(probes) < 2:
+        return [], [], target
 
     for i, p in enumerate(probes):
         mismatches = []
@@ -317,21 +343,40 @@ def _check_segment_compatibility(
             warnings.append(f"Segment {seg_name}: {', '.join(mismatches)}")
             incompatible_indices.append(i)
 
-    return warnings, incompatible_indices
+    return warnings, incompatible_indices, target
 
 
-def _reencode_segment(path: Path, output_format: OutputFormat | None) -> bool:
+def _reencode_segment(
+    path: Path,
+    output_format: OutputFormat | None,
+    compatibility_target: CompatibilityTarget,
+) -> bool:
     """Re-encode a segment in-place to match the expected output parameters.
 
     Used when Layer 2 detects a segment that is individually valid but
     incompatible with the majority of other segments.
     """
     tmp = path.with_suffix(".reenc.mp4")
-    target_w = output_format.width if output_format else 1920
-    target_h = output_format.height if output_format else 1080
-    target_fps = output_format.fps if output_format else 29.97
+    target_w = output_format.width if output_format else compatibility_target.width
+    target_h = output_format.height if output_format else compatibility_target.height
+    target_fps = output_format.fps if output_format else compatibility_target.fps
+    if target_w <= 0 or target_h <= 0 or target_fps <= 0:
+        return False
 
-    sw_codec = output_format.codec if output_format else "libx264"
+    target_pix_fmt = compatibility_target.pix_fmt or "yuv420p"
+    target_audio_rate = (
+        compatibility_target.audio_sample_rate if compatibility_target.audio_sample_rate else 48000
+    )
+    target_audio_channels = (
+        compatibility_target.audio_channels if compatibility_target.audio_channels else 2
+    )
+
+    if output_format:
+        sw_codec = output_format.codec
+    elif compatibility_target.video_codec in {"hevc", "h265"}:
+        sw_codec = "libx265"
+    else:
+        sw_codec = "libx264"
     if sw_codec == "auto":
         sw_codec = "libx264"
     codec = get_hwenc_codec(sw_codec)
@@ -357,8 +402,19 @@ def _reencode_segment(path: Path, output_format: OutputFormat | None) -> bool:
         if codec == "libx264":
             cmd.extend(["-profile:v", "high", "-level", "4.2"])
     cmd.extend(["-force_key_frames", "expr:eq(n,0)"])
-    cmd.extend(["-pix_fmt", "yuv420p"])
-    cmd.extend(["-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2"])
+    cmd.extend(["-pix_fmt", target_pix_fmt])
+    cmd.extend(
+        [
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-ar",
+            str(target_audio_rate),
+            "-ac",
+            str(target_audio_channels),
+        ]
+    )
     cmd.extend(["-movflags", "+faststart", str(tmp)])
 
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -413,6 +469,28 @@ def _verify_rough_cut(
             errors.append(
                 f"Rough cut duration {probe.duration:.1f}s vs expected {expected_duration:.1f}s "
                 f"(drift {drift:.1f}s)"
+            )
+
+    # Container duration can be governed by the longer audio stream and hide a
+    # truncated video track. Validate the streams independently as well.
+    for stream_name, stream_duration in (
+        ("video", probe.video_duration),
+        ("audio", probe.audio_duration),
+    ):
+        if expected_duration > 0 and stream_duration > 0:
+            drift = abs(stream_duration - expected_duration)
+            if drift > 1.0:
+                errors.append(
+                    f"Rough cut {stream_name} stream duration {stream_duration:.1f}s "
+                    f"vs expected {expected_duration:.1f}s (drift {drift:.1f}s)"
+                )
+
+    if probe.video_duration > 0 and probe.audio_duration > 0:
+        av_drift = abs(probe.video_duration - probe.audio_duration)
+        if av_drift > 1.0:
+            errors.append(
+                f"Rough cut audio/video duration mismatch: video {probe.video_duration:.1f}s, "
+                f"audio {probe.audio_duration:.1f}s (drift {av_drift:.1f}s)"
             )
 
     # Seek tests: validate the file is playable at start and midpoint.
@@ -1277,7 +1355,7 @@ def assemble_rough_cut(
     # -----------------------------------------------------------------------
     # Layer 2: Pre-concat compatibility matrix
     # -----------------------------------------------------------------------
-    compat_warnings, incompat_indices = _check_segment_compatibility(probes)
+    compat_warnings, incompat_indices, compatibility_target = _check_segment_compatibility(probes)
     if compat_warnings:
         print(f"    {len(incompat_indices)} segment(s) have parameter mismatches:")
         for w in compat_warnings:
@@ -1288,7 +1366,9 @@ def assemble_rough_cut(
         for idx in incompat_indices:
             seg_path = segment_files[idx]
             print(f"    Re-encoding {seg_path.stem} for compatibility...")
-            if _reencode_segment(seg_path, output_format):
+            if compatibility_target and _reencode_segment(
+                seg_path, output_format, compatibility_target
+            ):
                 probes[idx] = _probe_segment(seg_path)
                 print(
                     f"      OK — now {probes[idx].video_codec} {probes[idx].width}x{probes[idx].height}"

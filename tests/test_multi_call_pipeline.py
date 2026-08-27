@@ -19,11 +19,10 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 LIBRARY = PROJECT_ROOT / "library" / "family-hiking-in-Shipai"
 
-# Skip all tests if the project data isn't available
-pytestmark = pytest.mark.skipif(
-    not LIBRARY.exists(),
-    reason="family-hiking-in-Shipai project data not available",
-)
+
+def _require_project_data():
+    if not LIBRARY.exists():
+        pytest.skip("family-hiking-in-Shipai project data not available")
 
 
 # ---------------------------------------------------------------------------
@@ -33,11 +32,13 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def user_context():
+    _require_project_data()
     return json.loads((LIBRARY / "user_context_latest.json").read_text())
 
 
 @pytest.fixture(scope="module")
 def clip_reviews():
+    _require_project_data()
     reviews = []
     clips_dir = LIBRARY / "clips"
     for clip_dir in sorted(clips_dir.iterdir()):
@@ -49,6 +50,7 @@ def clip_reviews():
 
 @pytest.fixture(scope="module")
 def storyboard():
+    _require_project_data()
     from ai_video_editor.models import EditorialStoryboard
 
     sb_path = LIBRARY / "storyboard" / "editorial_gemini_latest.json"
@@ -677,27 +679,27 @@ class TestConfig:
         assert c.phase2_temperature == 0.6
         assert g.phase2b_temperature == 0.3
 
-    def test_split_pipeline_off_by_default(self):
+    def test_split_pipeline_on_by_default(self):
         from ai_video_editor.config import GeminiConfig
 
-        assert GeminiConfig().use_split_pipeline is False
+        assert GeminiConfig().use_split_pipeline is True
 
     def test_structuring_model_configured(self):
         from ai_video_editor.config import GeminiConfig
 
-        assert GeminiConfig().structuring_model == "gemini-2.5-flash-lite"
+        assert GeminiConfig().structuring_model == "gemini-3.5-flash-lite"
 
     def test_assembly_model_configured(self):
         from ai_video_editor.config import GeminiConfig
 
         g = GeminiConfig()
-        assert g.assembly_model == "gemini-2.5-flash"
-        assert g.phase2b == "gemini-2.5-flash"
+        assert g.assembly_model == "gemini-3.5-flash"
+        assert g.phase2b == "gemini-3.5-flash"
 
     def test_phase2_model_configured(self):
         from ai_video_editor.config import GeminiConfig
 
-        assert GeminiConfig().phase2 == "gemini-2.5-pro"
+        assert GeminiConfig().phase2 == "gemini-3.5-flash"
 
     def test_phase2b_fallback(self):
         from ai_video_editor.config import GeminiConfig
@@ -789,7 +791,7 @@ class TestFullPromptChain:
         assert first_cid in prompt_2b
 
         # Verify total prompt sizes are reasonable
-        print(f"\n  Prompt sizes (31-clip project):")
+        print("\n  Prompt sizes (31-clip project):")
         print(f"    Call 2A:   {len(prompt_2a):,} chars (~{len(prompt_2a) // 4:,} tokens)")
         print(f"    Call 2A.5: {len(prompt_2a5):,} chars")
         print(f"    Call 2B:   {len(prompt_2b):,} chars (~{len(prompt_2b) // 4:,} tokens)")

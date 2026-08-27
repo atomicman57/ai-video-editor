@@ -37,6 +37,27 @@ from .versioning import (
 )
 
 
+def _gemini_structured_output_config(
+    *, temperature: float, response_schema=None, max_output_tokens: int | None = None
+):
+    """Build a structured-output config accepted by current Gemini models.
+
+    Gemini 3.5 rejects the legacy ``thinking_budget=0`` request option with
+    ``INVALID_ARGUMENT``. Omitting thinking configuration lets the model use
+    its supported default while retaining schema-constrained JSON output.
+    """
+    from google.genai import types
+
+    values = {
+        "temperature": temperature,
+        "response_mime_type": "application/json",
+        "response_schema": response_schema,
+    }
+    if max_output_tokens is not None:
+        values["max_output_tokens"] = max_output_tokens
+    return types.GenerateContentConfig(**values)
+
+
 def _load_transcript_for_prompt(clip_paths):
     """Import helper from editorial_agent to avoid circular dependency."""
     from .editorial_agent import _load_transcript_for_prompt as _helper
@@ -155,8 +176,6 @@ def _run_phase2_sections(
     Divide & Conquer pipeline that enforces chronological section order
     while allowing aesthetic freedom within each section.
     """
-    from google.genai import types
-
     from .briefing import format_brief_for_prompt
     from .editorial_prompts import (
         build_hook_prompt,
@@ -246,9 +265,8 @@ def _run_phase2_sections(
                 client.raw,
                 model=gemini_cfg.phase2,
                 contents=scene_prompt,
-                config=types.GenerateContentConfig(
+                config=_gemini_structured_output_config(
                     temperature=gemini_cfg.phase2_temperature,
-                    response_mime_type="application/json",
                     response_schema=ScenePlan,
                 ),
                 phase="phase2_scene_planner",
@@ -309,9 +327,8 @@ def _run_phase2_sections(
                 client.raw,
                 model=gemini_cfg.phase2,
                 contents=narrative_prompt,
-                config=types.GenerateContentConfig(
+                config=_gemini_structured_output_config(
                     temperature=gemini_cfg.phase2_temperature,
-                    response_mime_type="application/json",
                     response_schema=SectionPlan,
                 ),
                 phase="phase2_narrative_planner",
@@ -365,11 +382,9 @@ def _run_phase2_sections(
                 client.raw,
                 model=gemini_cfg.phase2b,
                 contents=hook_prompt,
-                config=types.GenerateContentConfig(
+                config=_gemini_structured_output_config(
                     temperature=gemini_cfg.phase2b_temperature,
-                    response_mime_type="application/json",
                     response_schema=HookStoryboard,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                     max_output_tokens=65536,
                 ),
                 phase="phase2_hook",
@@ -424,11 +439,9 @@ def _run_phase2_sections(
                     client.raw,
                     model=gemini_cfg.phase2b,
                     contents=prompt,
-                    config=types.GenerateContentConfig(
+                    config=_gemini_structured_output_config(
                         temperature=gemini_cfg.phase2b_temperature,
-                        response_mime_type="application/json",
                         response_schema=SectionStoryboard,
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                         max_output_tokens=65536,
                     ),
                     phase=f"phase2_section_{section.section_id}",
@@ -785,11 +798,9 @@ def _run_phase2_split(
                     client.raw,
                     model=gemini_cfg.structuring_model,
                     contents=structuring_prompt,
-                    config=types.GenerateContentConfig(
+                    config=_gemini_structured_output_config(
                         temperature=0.2,
-                        response_mime_type="application/json",
                         response_schema=StoryPlan,
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                         max_output_tokens=65536,
                     ),
                     phase="phase2a_structuring",
@@ -845,11 +856,9 @@ def _run_phase2_split(
                     client.raw,
                     model=gemini_cfg.phase2b,
                     contents=assembly_prompt,
-                    config=types.GenerateContentConfig(
+                    config=_gemini_structured_output_config(
                         temperature=gemini_cfg.phase2b_temperature,
-                        response_mime_type="application/json",
                         response_schema=EditorialStoryboard,
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                         max_output_tokens=65536,
                     ),
                     phase="phase2b_assembly",
@@ -1203,9 +1212,8 @@ def run_phase2(
                 client.raw,
                 model=p2_model,
                 contents=contents,
-                config=types.GenerateContentConfig(
+                config=_gemini_structured_output_config(
                     temperature=gemini_cfg.phase2_temperature,
-                    response_mime_type="application/json",
                     response_schema=EditorialStoryboard,
                     max_output_tokens=65536,
                 ),

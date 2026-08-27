@@ -221,7 +221,13 @@ def run_editorial_review(
     )
     from .infra.gemini_client import GeminiClient
     from .render import generate_contact_strip
-    from .tracing import estimate_cost, otel_phase_span, otel_session_span, otel_tool_span
+    from .tracing import (
+        estimate_cost,
+        extract_gemini_token_usage,
+        otel_phase_span,
+        otel_session_span,
+        otel_tool_span,
+    )
 
     budget = ReviewBudget.from_config(review_config)
 
@@ -370,10 +376,9 @@ def run_editorial_review(
         turn_cost = 0.0
         input_tokens = 0
         output_tokens = 0
+        total_tokens = 0
         if hasattr(response, "usage_metadata") and response.usage_metadata:
-            um = response.usage_metadata
-            input_tokens = getattr(um, "prompt_token_count", 0) or 0
-            output_tokens = getattr(um, "candidates_token_count", 0) or 0
+            input_tokens, output_tokens, total_tokens = extract_gemini_token_usage(response)
             turn_cost = estimate_cost(review_config.model, input_tokens, output_tokens)
             budget.cost_used_usd += turn_cost
 
@@ -387,7 +392,7 @@ def run_editorial_review(
                 model=review_config.model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
-                total_tokens=input_tokens + output_tokens,
+                total_tokens=total_tokens,
                 estimated_cost_usd=turn_cost,
                 duration_sec=round(turn_duration, 2),
             )
@@ -631,7 +636,13 @@ def run_director_chat(
     )
     from .infra.gemini_client import GeminiClient
     from .render import generate_contact_strip
-    from .tracing import estimate_cost, otel_phase_span, otel_session_span, otel_tool_span
+    from .tracing import (
+        estimate_cost,
+        extract_gemini_token_usage,
+        otel_phase_span,
+        otel_session_span,
+        otel_tool_span,
+    )
 
     if print_fn is None:
         print_fn = print
@@ -916,10 +927,9 @@ def run_director_chat(
             turn_cost = 0.0
             input_tokens = 0
             output_tokens = 0
+            total_tokens = 0
             if hasattr(response, "usage_metadata") and response.usage_metadata:
-                um = response.usage_metadata
-                input_tokens = getattr(um, "prompt_token_count", 0) or 0
-                output_tokens = getattr(um, "candidates_token_count", 0) or 0
+                input_tokens, output_tokens, total_tokens = extract_gemini_token_usage(response)
                 turn_cost = estimate_cost(review_config.model, input_tokens, output_tokens)
                 budget.cost_used_usd += turn_cost
 
@@ -933,7 +943,7 @@ def run_director_chat(
                         model=review_config.model,
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
-                        total_tokens=input_tokens + output_tokens,
+                        total_tokens=total_tokens,
                         estimated_cost_usd=turn_cost,
                         duration_sec=round(turn_duration, 2),
                     )
@@ -1218,6 +1228,8 @@ def _next_session_id(session_dir: Path) -> str:
 
 def find_active_session(editorial_paths) -> ChatSession | None:
     """Find an active (non-completed) chat session for a project."""
+    import json
+
     from .models import ChatSession
 
     sd = editorial_paths.root / "sessions"

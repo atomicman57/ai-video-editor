@@ -14,6 +14,8 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mts", ".m4v"}
 # Model constants — single source of truth for all LLM model name strings
 # ---------------------------------------------------------------------------
 MODEL_GEMINI_3_FLASH = "gemini-3-flash-preview"
+MODEL_GEMINI_35_FLASH = "gemini-3.5-flash"
+MODEL_GEMINI_35_FLASH_LITE = "gemini-3.5-flash-lite"
 MODEL_GEMINI_25_PRO = "gemini-2.5-pro"
 MODEL_GEMINI_25_FLASH = "gemini-2.5-flash"
 MODEL_GEMINI_25_FLASH_LITE = "gemini-2.5-flash-lite"
@@ -87,10 +89,10 @@ class ClaudeConfig:
 
 @dataclass
 class GeminiConfig:
-    model: str = MODEL_GEMINI_3_FLASH  # Phase 1 review
-    phase2_model: str | None = MODEL_GEMINI_25_PRO  # Call 2A (creative reasoning)
-    structuring_model: str = MODEL_GEMINI_25_FLASH_LITE  # Call 2A.5 (JSON structuring)
-    assembly_model: str | None = MODEL_GEMINI_25_FLASH  # Call 2B (precise assembly)
+    model: str = MODEL_GEMINI_35_FLASH  # Phase 1 review
+    phase2_model: str | None = MODEL_GEMINI_35_FLASH  # Call 2A (creative reasoning)
+    structuring_model: str = MODEL_GEMINI_35_FLASH_LITE  # Call 2A.5 (JSON structuring)
+    assembly_model: str | None = MODEL_GEMINI_35_FLASH  # Call 2B (precise assembly)
     temperature: float = 0.2
     phase2_temperature: float = 0.6
     phase2b_temperature: float = 0.3  # assembly is mechanical, not creative
@@ -117,7 +119,7 @@ class TranscribeConfig:
     # Provider selection: "auto" | "mlx" | "gemini"
     provider: str = "auto"
     # Gemini transcription settings (cloud)
-    gemini_model: str = MODEL_GEMINI_3_FLASH
+    gemini_model: str = MODEL_GEMINI_35_FLASH
 
 
 @dataclass
@@ -265,7 +267,7 @@ class ReviewConfig:
     """Configuration for the Editorial Director review loop."""
 
     enabled: bool = False  # experimental — opt-in via --review or TUI
-    model: str = MODEL_GEMINI_3_FLASH
+    model: str = MODEL_GEMINI_35_FLASH
     max_turns: int = 50
     max_fixes: int = 40
     max_review_cost_usd: float = 0.50

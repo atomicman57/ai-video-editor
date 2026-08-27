@@ -22,6 +22,8 @@ from .config import (
     MODEL_GEMINI_25_FLASH_LITE,
     MODEL_GEMINI_25_PRO,
     MODEL_GEMINI_3_FLASH,
+    MODEL_GEMINI_35_FLASH,
+    MODEL_GEMINI_35_FLASH_LITE,
 )
 
 
@@ -83,6 +85,8 @@ COST_PER_1M_TOKENS = {
     "gemini-3.1-pro-preview": {"input": 2.00, "output": 12.00},
     "gemini-3.1-flash-lite-preview": {"input": 0.25, "output": 1.50},
     MODEL_GEMINI_3_FLASH: {"input": 0.50, "output": 3.00},
+    MODEL_GEMINI_35_FLASH: {"input": 1.50, "output": 9.00},
+    MODEL_GEMINI_35_FLASH_LITE: {"input": 0.30, "output": 2.50},
     # Gemini 2.5
     MODEL_GEMINI_25_FLASH: {"input": 0.30, "output": 2.50},
     MODEL_GEMINI_25_FLASH_LITE: {"input": 0.10, "output": 0.40},
@@ -153,6 +157,25 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
             )
         return 0.0
     return (input_tokens * rates["input"] + output_tokens * rates["output"]) / 1_000_000
+
+
+def extract_gemini_token_usage(response) -> tuple[int, int, int]:
+    """Return input, billable output, and total tokens from a Gemini response.
+
+    Gemini reports visible candidate tokens and internal thinking tokens in
+    separate fields. Both are billed at the output-token rate, so callers must
+    combine them for cost accounting and budget enforcement.
+    """
+    usage = getattr(response, "usage_metadata", None)
+    if not usage:
+        return 0, 0, 0
+
+    input_tokens = getattr(usage, "prompt_token_count", 0) or 0
+    candidate_tokens = getattr(usage, "candidates_token_count", 0) or 0
+    thinking_tokens = getattr(usage, "thoughts_token_count", 0) or 0
+    output_tokens = candidate_tokens + thinking_tokens
+    total_tokens = getattr(usage, "total_token_count", 0) or input_tokens + output_tokens
+    return input_tokens, output_tokens, total_tokens
 
 
 # ---------------------------------------------------------------------------
@@ -680,10 +703,9 @@ def traced_gemini_generate(
 
             # Extract token usage from response metadata
             if hasattr(response, "usage_metadata") and response.usage_metadata:
-                um = response.usage_metadata
-                trace.input_tokens = getattr(um, "prompt_token_count", 0) or 0
-                trace.output_tokens = getattr(um, "candidates_token_count", 0) or 0
-                trace.total_tokens = getattr(um, "total_token_count", 0) or 0
+                trace.input_tokens, trace.output_tokens, trace.total_tokens = (
+                    extract_gemini_token_usage(response)
+                )
             trace.estimated_cost_usd = estimate_cost(model, trace.input_tokens, trace.output_tokens)
             trace.success = True
 
@@ -804,7 +826,7 @@ def traced_claude_generate(
 def estimate_phase1_cost(
     clip_count: int,
     avg_clip_duration_sec: float,
-    model: str = MODEL_GEMINI_3_FLASH,
+    model: str = MODEL_GEMINI_35_FLASH,
 ) -> dict:
     """Estimate Phase 1 cost (one LLM call per clip with video)."""
     video_tokens = int(avg_clip_duration_sec * GEMINI_VIDEO_TOKENS_PER_SEC)
@@ -827,7 +849,7 @@ def estimate_phase1_cost(
 def estimate_phase2_cost(
     clip_count: int,
     reviews_chars: int,
-    model: str = MODEL_GEMINI_3_FLASH,
+    model: str = MODEL_GEMINI_35_FLASH,
     visual: bool = False,
     total_video_duration_sec: float = 0,
 ) -> dict:
@@ -852,7 +874,7 @@ def estimate_phase2_cost(
 def estimate_transcription_cost(
     clip_count: int,
     avg_clip_duration_sec: float,
-    model: str = MODEL_GEMINI_25_FLASH,
+    model: str = MODEL_GEMINI_35_FLASH,
 ) -> dict:
     """Estimate Gemini transcription cost (one call per clip with video)."""
     video_tokens = int(avg_clip_duration_sec * GEMINI_VIDEO_TOKENS_PER_SEC)
@@ -874,7 +896,7 @@ def estimate_transcription_cost(
 
 def estimate_monologue_cost(
     clip_count: int,
-    model: str = MODEL_GEMINI_3_FLASH,
+    model: str = MODEL_GEMINI_35_FLASH,
 ) -> dict:
     """Estimate Phase 3 (Visual Monologue) cost — single text-only LLM call."""
     # Input: storyboard JSON (~3K tokens) + transcripts (~1K per clip) + prompt (~2K)

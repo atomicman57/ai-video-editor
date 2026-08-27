@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from .infra.atomic_write import atomic_write_text
-from .config import MODEL_GEMINI_25_FLASH
+from .config import MODEL_GEMINI_35_FLASH
 from .i18n import t
 
 import questionary
@@ -250,7 +250,7 @@ Be concise. This is a quick scan, not a detailed review.
 
 def run_quick_scan(
     editorial_paths,
-    gemini_model: str = MODEL_GEMINI_25_FLASH,
+    gemini_model: str = MODEL_GEMINI_35_FLASH,
     tracer=None,
 ) -> dict | None:
     """Upload all proxy videos and get a quick AI overview in one LLM call.
@@ -363,7 +363,7 @@ def run_quick_scan(
 def run_smart_briefing(
     editorial_paths,
     style: str,
-    gemini_model: str = MODEL_GEMINI_25_FLASH,
+    gemini_model: str = MODEL_GEMINI_35_FLASH,
     tracer=None,
 ) -> dict | None:
     """Run AI-guided briefing: quick scan → show observations → ask targeted questions.
