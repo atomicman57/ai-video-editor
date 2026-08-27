@@ -23,6 +23,7 @@ struct BriefingView: View {
                 VXButton(title: "Continue to analysis", variant: .primary, icon: "chevronRight") {
                     state.route = .editor
                 }
+                .disabled(state.activeProject == nil || state.currentJob?.isTerminal == false)
             })
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -69,6 +70,18 @@ struct BriefingView: View {
                 }
                 Text("VX will preprocess every clip (proxies, scenes, audio), then quick-scan the footage to ask sharper questions.")
                     .font(VXFont.xs).foregroundStyle(VXColor.textMuted)
+                if let job = state.currentJob, job.kind == "create" {
+                    if job.isTerminal {
+                        Text(job.status == "completed" ? "Import complete — \(state.activeProject?.clipCount ?? 0) clips ready." : (job.error ?? "Import failed."))
+                            .font(VXFont.xs)
+                            .foregroundStyle(job.status == "completed" ? VXColor.statusSuccess : VXColor.statusWarning)
+                    } else {
+                        JobBar(job: job)
+                    }
+                }
+                if let error = state.loadError {
+                    Text(error).font(VXFont.xs).foregroundStyle(VXColor.statusWarning)
+                }
             }
         }
     }
@@ -93,10 +106,7 @@ struct BriefingView: View {
         guard !newName.isEmpty, !sourceDir.isEmpty else { return }
         Task {
             let req = CreateProjectRequest(name: newName, sourceDir: sourceDir)
-            if let job = try? await APIClient.shared.createProject(req) {
-                await MainActor.run { state.currentJob = job }
-                await state.reloadProjects()
-            }
+            await state.importProject(req)
         }
     }
 }

@@ -66,6 +66,13 @@ struct EditorView: View {
             if let job = state.currentJob, !job.isTerminal {
                 JobBar(job: job).frame(maxWidth: 420)
             }
+            if let failure = state.currentJob?.failureMessage {
+                Text(failure)
+                    .font(VXFont.sm)
+                    .foregroundStyle(VXColor.statusWarning)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 560)
+            }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -90,7 +97,13 @@ struct EditorView: View {
 
     private var statusBar: some View {
         HStack(spacing: 16) {
-            if let job = state.currentJob, !job.isTerminal {
+            if let failure = state.currentJob?.failureMessage {
+                VXIcon(name: "warning", size: 13, color: VXColor.statusWarning)
+                Text(failure)
+                    .font(VXFont.mono(11))
+                    .foregroundStyle(VXColor.statusWarning)
+                    .lineLimit(1)
+            } else if let job = state.currentJob, !job.isTerminal {
                 ProgressView().controlSize(.small)
                 Text(job.stage ?? job.status).font(VXFont.mono(11)).foregroundStyle(VXColor.textBody)
             } else {

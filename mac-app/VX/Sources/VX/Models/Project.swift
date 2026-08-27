@@ -105,6 +105,11 @@ struct JobInfo: Codable, Hashable, Identifiable {
     }
 
     var isTerminal: Bool { status == "completed" || status == "failed" }
+    var failureMessage: String? {
+        guard status == "failed" else { return nil }
+        let message = error?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return message.isEmpty ? "The job failed. Check the sidecar logs for details." : message
+    }
 }
 
 /// Minimal type-erased JSON value so `result` (an open dict) decodes cleanly.

@@ -20,6 +20,11 @@ final class AppState: ObservableObject {
     @Published var currentJob: JobInfo?
 
     private let api = APIClient.shared
+    private let importService: any ProjectImportService
+
+    init(importService: any ProjectImportService = APIClient.shared) {
+        self.importService = importService
+    }
 
     // -- Lifecycle -----------------------------------------------------------
     func bootstrap() async {
@@ -33,7 +38,7 @@ final class AppState: ObservableObject {
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
         connected = false
-        loadError = "Could not reach the VX sidecar on 127.0.0.1:8765. Run `vx serve` (or `python -m ai_video_editor.server`)."
+        loadError = "Could not reach the VX sidecar on \(SidecarConfiguration.baseURL().absoluteString). Run `vx serve` (or `python -m ai_video_editor.server`)."
     }
 
     func reloadProjects() async {
@@ -47,6 +52,16 @@ final class AppState: ObservableObject {
         editMode = p.mode
         route = .editor
         Task { await loadProject(p.id) }
+    }
+
+    func beginBriefing() {
+        activeProject = nil
+        detail = nil
+        storyboard = nil
+        selectedSegment = nil
+        currentJob = nil
+        loadError = nil
+        route = .briefing
     }
 
     func loadProject(_ id: String) async {
@@ -73,6 +88,46 @@ final class AppState: ObservableObject {
     func runCut(proxyMode: Bool) {
         guard let id = activeProject?.id else { return }
         Task { await track(try await api.cut(id, CutRequest(proxyMode: proxyMode))) }
+    }
+
+    func importProject(_ request: CreateProjectRequest) async {
+        activeProject = nil
+        detail = nil
+        storyboard = nil
+        selectedSegment = nil
+        currentJob = nil
+        loadError = nil
+
+        do {
+            let submitted = try await importService.createProject(request)
+            currentJob = submitted
+            var latest = submitted
+
+            if !submitted.isTerminal {
+                let updates = await importService.jobUpdates(for: submitted.id)
+                for await update in updates {
+                    latest = update
+                    currentJob = update
+                    if let c = update.cost { cost = c }
+                    if update.isTerminal { break }
+                }
+            }
+
+            guard latest.status == "completed" else {
+                loadError = latest.error ?? "Import ended before preprocessing completed."
+                return
+            }
+
+            projects = try await importService.projects()
+            guard let imported = projects.first(where: { $0.id == request.name }) else {
+                loadError = "Imported project '\(request.name)' was not returned by the sidecar."
+                return
+            }
+            activeProject = imported
+            editMode = imported.mode
+        } catch {
+            loadError = error.localizedDescription
+        }
     }
 
     private func track(_ job: JobInfo) async {

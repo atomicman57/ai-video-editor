@@ -28,6 +28,15 @@ swift run VX
 The app health-checks the sidecar on `:8765` (shows an "offline" badge until
 reachable), then loads your real projects from `library/`. Open a project to see
 its storyboard in the editor; the player streams clip proxies from the sidecar.
+If that port is already in use, set the same `VX_PORT` for both processes:
+
+```bash
+VX_PORT=18765 .venv/bin/python -m ai_video_editor.server
+cd mac-app/VX
+VX_PORT=18765 swift run VX
+```
+
+`VX_HOST` can likewise override the default loopback host when needed.
 
 > Requires macOS 13+ and the Swift toolchain (ships with Xcode / Command Line
 > Tools). Verified to compile with Swift 6.2.

@@ -56,7 +56,7 @@ struct Sidebar: View {
         VStack(alignment: .leading, spacing: 4) {
             Logo().padding(.horizontal, 8).padding(.bottom, 12).padding(.top, 2)
             NavItem(icon: "folder", label: "Library", active: state.route == .library) { state.route = .library }
-            NavItem(icon: "sparkle", label: "Briefing", active: state.route == .briefing) { state.route = .briefing }
+            NavItem(icon: "sparkle", label: "Briefing", active: state.route == .briefing) { state.beginBriefing() }
             NavItem(icon: "settings", label: "Settings", active: state.route == .settings) { state.route = .settings }
 
             Eyebrow("Recents").padding(.horizontal, 8).padding(.top, 18).padding(.bottom, 8)

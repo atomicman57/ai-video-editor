@@ -21,7 +21,8 @@ final class SidecarManager {
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         proc.arguments = ["python", "-m", "ai_video_editor.server"]
         var env = ProcessInfo.processInfo.environment
-        env["VX_PORT"] = env["VX_PORT"] ?? "8765"
+        env["VX_HOST"] = env["VX_HOST"] ?? SidecarConfiguration.defaultHost
+        env["VX_PORT"] = env["VX_PORT"] ?? String(SidecarConfiguration.defaultPort)
         proc.environment = env
         do { try proc.run(); process = proc }
         catch { NSLog("VX: failed to spawn sidecar: \(error)") }

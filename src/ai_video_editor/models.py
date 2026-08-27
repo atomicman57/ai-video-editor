@@ -923,7 +923,7 @@ class ManifestClip(BaseModel):
     duration_sec: float = 0.0
     resolution: str = ""
     fps: float | str = 0.0  # may be fractional string from ffprobe (e.g. "60000/1001")
-    creation_time: str = ""
+    creation_time: str | None = None
 
     model_config = {"extra": "allow"}
 

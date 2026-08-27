@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse
 
 from ..config import Config
@@ -64,7 +65,9 @@ def find_rough_cut(ep) -> Path | None:
     exports = ep.exports
     if not exports.exists():
         return None
-    cuts = sorted(exports.glob("v*/rough_cut.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+    cuts = list(exports.glob("cuts/cut_*/rough_cut*.mp4"))
+    cuts.extend(exports.glob("v*/rough_cut.mp4"))
+    cuts.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return cuts[0] if cuts else None
 
 
@@ -108,7 +111,7 @@ def _cost(name: str) -> CostSummary:
     from ..tracing import load_all_traces, summarize_traces
 
     s = summarize_traces(load_all_traces(CFG.library_dir / name))
-    return CostSummary(**{k: s.get(k, 0) for k in CostSummary.model_fields})
+    return CostSummary(**s)
 
 
 # --------------------------------------------------------------------------
@@ -361,7 +364,7 @@ async def job_ws(ws: WebSocket, job_id: str):
                 payload["cost"] = _cost(job.project).model_dump()
             except Exception:
                 payload["cost"] = None
-            await ws.send_json(payload)
+            await ws.send_json(jsonable_encoder(payload))
             if snap.get("status") in ("completed", "failed"):
                 break
     except WebSocketDisconnect:

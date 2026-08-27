@@ -1,11 +1,17 @@
 import Foundation
 
+protocol ProjectImportService: Sendable {
+    func createProject(_ req: CreateProjectRequest) async throws -> JobInfo
+    func projects() async throws -> [ProjectSummary]
+    func jobUpdates(for jobID: String) async -> AsyncStream<JobInfo>
+}
+
 /// Thin async REST client for the VX sidecar (loopback). Mutating calls return
 /// a `JobInfo`; progress is streamed separately via `JobStream`.
 actor APIClient {
     static let shared = APIClient()
 
-    var baseURL = URL(string: "http://127.0.0.1:8765")!
+    var baseURL = SidecarConfiguration.baseURL()
     private let session = URLSession(configuration: .default)
 
     func setBaseURL(_ url: URL) { baseURL = url }
@@ -52,6 +58,10 @@ actor APIClient {
     func analyze(_ id: String, _ req: AnalyzeRequest) async throws -> JobInfo { try await post("/projects/\(id)/analyze", req) }
     func cut(_ id: String, _ req: CutRequest) async throws -> JobInfo { try await post("/projects/\(id)/cut", req) }
     func job(_ id: String) async throws -> JobInfo { try await get("/jobs/\(id)") }
+    func jobUpdates(for jobID: String) async -> AsyncStream<JobInfo> {
+        let stream = await JobStream(jobID: jobID)
+        return stream.updates()
+    }
 
     func proxyURL(project: String, clip: String) -> URL {
         baseURL.appendingPathComponent("media/proxy/\(project)/\(clip)")
@@ -66,6 +76,8 @@ actor APIClient {
         return c.url!
     }
 }
+
+extension APIClient: ProjectImportService {}
 
 // Request bodies (mirror server/schemas.py)
 struct CreateProjectRequest: Codable {

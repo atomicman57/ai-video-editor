@@ -10,6 +10,11 @@ let package = Package(
         .executableTarget(
             name: "VX",
             path: "Sources/VX"
+        ),
+        .testTarget(
+            name: "VXTests",
+            dependencies: ["VX"],
+            path: "Tests/VXTests"
         )
     ]
 )

@@ -18,7 +18,7 @@ struct LibraryView: View {
             VXToolbar(left: {
                 Text("Library").font(VXFont.title).foregroundStyle(VXColor.textPrimary)
             }, right: {
-                VXButton(title: "New Project", variant: .primary, icon: "plus") { state.route = .briefing }
+                VXButton(title: "New Project", variant: .primary, icon: "plus") { state.beginBriefing() }
             })
 
             ScrollView {
@@ -29,7 +29,7 @@ struct LibraryView: View {
                     }
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(filtered) { p in ProjectTile(p: p) { state.open(p) } }
-                        ImportTile { state.route = .briefing }
+                        ImportTile { state.beginBriefing() }
                     }
                 }
                 .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 32)
